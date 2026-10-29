@@ -6,7 +6,7 @@ import logging
 
 logging.basicConfig(level = logging.INFO ,format = '[%(asctime)s]: %(message)s:')
 
-project_name = "E_Commerce_Customer_Segmentation"  
+project_name = "Handwriting Verification Using Siamese Neural Networks"  
 
 # For CI/CD type deployment ymal/automated files
 list_of_files = [
