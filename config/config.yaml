@@ -1,0 +1,15 @@
+
+artifacts_root: artifacts
+
+data_ingestion:
+  root_dir: artifacts/data_ingestion
+  dataset_name: CVL
+  data_source: data/raw/CVL
+  dataset_folder: cvl-database-1-1
+  train_dir: trainset
+  test_dir: testset
+  image_types:
+  - pages
+  - lines
+  - words
+  annotation_dir: xml

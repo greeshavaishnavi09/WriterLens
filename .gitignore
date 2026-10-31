@@ -218,3 +218,54 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+venv/
+env/
+.venv/
+writerlens/
+
+# Logs
+logs/
+*.log
+
+# Dataset - CVL (do not publish)
+data/raw/
+data/processed/
+*.zip
+
+# Generated artifacts
+artifacts/
+
+# Trained models and checkpoints
+*.pth
+*.pt
+*.pkl
+*.joblib
+*.h5
+*.onnx
+
+# Jupyter temporary files
+.ipynb_checkpoints/
+
+# IDE settings
+.vscode/
+.idea/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.bak

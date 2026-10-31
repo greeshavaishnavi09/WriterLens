@@ -1,0 +1,10 @@
+
+RANDOM_STATE: 42
+
+data:
+  image_level: lines
+  grayscale: true
+  train_split: trainset
+  test_split: testset
+  validation_size: 0.15
+  preserve_original_split: true
