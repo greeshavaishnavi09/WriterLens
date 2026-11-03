@@ -2,6 +2,7 @@ from Handwriting_Verification_Using_Siamese_Neural_Networks.constant import CONF
 from Handwriting_Verification_Using_Siamese_Neural_Networks.constant import *
 from Handwriting_Verification_Using_Siamese_Neural_Networks.utils.common import read_yaml,create_directories
 from Handwriting_Verification_Using_Siamese_Neural_Networks.entity.config_entity import DataIngestionConfig
+from Handwriting_Verification_Using_Siamese_Neural_Networks.entity.config_entity import DataValidationConfig
 
 
 # CONFIGURATION MANAGER
@@ -74,3 +75,87 @@ class ConfigurationManager:
         )
 
         return data_ingestion_config
+
+
+    def get_data_validation_config(self) -> DataValidationConfig:
+
+        config = self.config.data_validation
+
+        # Resolve ingestion artifact directory.
+        ingestion_dir = (PROJECT_ROOT / config.ingestion_dir)
+
+        if not ingestion_dir.exists():
+
+            raise FileNotFoundError(
+                f"Ingestion directory not found: {ingestion_dir}"
+            )
+
+        if not ingestion_dir.is_dir():
+
+            raise NotADirectoryError(
+                f"Ingestion path is not a directory: {ingestion_dir}"
+            )
+
+        # Resolve ingestion report files.
+        inventory_file = (ingestion_dir / config.inventory_file)
+
+        image_inspection_file = (ingestion_dir / config.image_inspection_file)
+
+        xml_inspection_file = (ingestion_dir / config.xml_inspection_file)
+
+        required_files = [
+            inventory_file,
+            image_inspection_file,
+            xml_inspection_file,
+        ]
+
+        for file_path in required_files:
+
+            if not file_path.exists():
+
+                raise FileNotFoundError(f"Required ingestion report not found: {file_path}")
+
+            if not file_path.is_file():
+
+                raise ValueError(f"Expected a file: {file_path}")
+
+        # Create validation artifact directory.
+        root_dir = PROJECT_ROOT / config.root_dir
+
+        create_directories([root_dir])
+
+        # Define output paths.
+        data_validation_config = DataValidationConfig(
+
+            root_dir=root_dir,
+
+            ingestion_dir=ingestion_dir,
+
+            inventory_file=inventory_file,
+
+            image_inspection_file=image_inspection_file,
+
+            xml_inspection_file=xml_inspection_file,
+
+            validation_report_path=(root_dir / "validation_report.json"),
+
+            writer_statistics_path=(root_dir / "writer_statistics.csv"),
+
+            image_reference_errors_path=(root_dir / "image_reference_errors.csv"),
+
+            validation_summary_path=(root_dir / "validation_summary.json"),
+
+            strict_mode=bool(config.strict_mode),
+
+            fail_on_missing_reference=bool(config.fail_on_missing_reference),
+
+            fail_on_missing_writer_id=bool(config.fail_on_missing_writer_id),
+
+            fail_on_duplicate_reference=bool(config.fail_on_duplicate_reference),
+
+            check_writer_split_overlap=bool(config.check_writer_split_overlap),
+
+        )
+
+        return data_validation_config
+

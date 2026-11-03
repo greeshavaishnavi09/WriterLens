@@ -13,3 +13,16 @@ data_ingestion:
   - lines
   - words
   annotation_dir: xml
+
+
+data_validation:
+  root_dir: artifacts/data_validation
+  ingestion_dir: artifacts/data_ingestion
+  inventory_file: dataset_inventory.csv
+  image_inspection_file: image_inspection.csv
+  xml_inspection_file: xml_annotation_inspection.csv
+  strict_mode: true
+  fail_on_missing_reference: true
+  fail_on_missing_writer_id: true
+  fail_on_duplicate_reference: false
+  check_writer_split_overlap: false
