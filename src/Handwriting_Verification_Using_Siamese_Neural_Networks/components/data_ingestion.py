@@ -1,43 +1,57 @@
-# IMPORT LIBRARIES FOR DATA INGESTION COMPONENT
 
 import json
 import re
+import time
 import xml.etree.ElementTree as ET
 
 from pathlib import Path
+from time import perf_counter
 
 import pandas as pd
+
 from PIL import Image, UnidentifiedImageError
 
-from Handwriting_Verification_Using_Siamese_Neural_Networks.entity.config_entity import DataIngestionConfig
+from Handwriting_Verification_Using_Siamese_Neural_Networks.entity.config_entity import (
+    DataIngestionConfig
+)
 
 from Handwriting_Verification_Using_Siamese_Neural_Networks.logging import logger
 
 
-# COMPONENTS
-
 class DataIngestion:
     """
-    CVL dataset ingestion component.
+    CVL Dataset Data Ingestion Component.
 
     Responsibilities:
         1. Validate dataset directories.
-        2. Collect recursive file inventory.
+        2. Collect recursive dataset file inventory.
         3. Inspect page, line and word images.
         4. Parse XML annotation files.
-        5. Extract available XML metadata.
-        6. Generate ingestion reports.
+        5. Extract writer and image metadata.
+        6. Generate CSV and JSON reports.
+        7. Track execution time and processing progress.
     """
 
     def __init__(self, config: DataIngestionConfig):
+
         self.config = config
         self.report_dir = self.config.root_dir
 
-    # ---------------------------------------------------------
-    # TASK 1: VALIDATE DATASET
-    # ---------------------------------------------------------
+        self.image_extensions = {
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".bmp",
+            ".tif",
+            ".tiff",
+        }
+
+    # =========================================================
+    # TASK 1: VALIDATE DATASET DIRECTORIES
+    # =========================================================
 
     def validate_dataset(self):
+
         required_paths = {
             "Dataset": self.config.dataset_dir,
             "Training": self.config.train_dir,
@@ -47,11 +61,13 @@ class DataIngestion:
         for name, path in required_paths.items():
 
             if not path.exists():
+
                 raise FileNotFoundError(
                     f"{name} directory not found: {path}"
                 )
 
             if not path.is_dir():
+
                 raise NotADirectoryError(
                     f"{name} path is not a directory: {path}"
                 )
@@ -60,12 +76,15 @@ class DataIngestion:
             "CVL dataset directories validated successfully."
         )
 
-    # ---------------------------------------------------------
+    # =========================================================
     # TASK 2: COLLECT RECURSIVE DATASET INVENTORY
-    # ---------------------------------------------------------
+    # =========================================================
 
     def collect_file_inventory(self):
+
         logger.info("Starting dataset file inventory.")
+
+        start_time = perf_counter()
 
         inventory = []
 
@@ -88,7 +107,7 @@ class DataIngestion:
                 folder_exists = category_path.is_dir()
 
                 if folder_exists:
-                    # Recursive discovery includes nested files.
+
                     files = [
                         path
                         for path in category_path.rglob("*")
@@ -96,6 +115,7 @@ class DataIngestion:
                     ]
 
                 else:
+
                     files = []
 
                     logger.warning(
@@ -113,39 +133,50 @@ class DataIngestion:
                 })
 
                 inventory.append({
+
                     "Split": split_name,
+
                     "Category": category,
+
                     "Folder_Exists": folder_exists,
+
                     "File_Count": len(files),
+
                     "Total_Size_MB": round(
                         total_size_bytes / (1024 ** 2), 2
                     ),
+
                     "Extensions": ", ".join(extensions),
+
                 })
+
+                logger.info(
+                    f"Inventory: {split_name}/{category} "
+                    f"| Files: {len(files)}"
+                )
 
         inventory_df = pd.DataFrame(inventory)
 
-        logger.info("Dataset inventory completed.")
+        elapsed_time = perf_counter() - start_time
+
+        logger.info(
+            f"Dataset inventory completed in "
+            f"{elapsed_time:.2f} seconds."
+        )
 
         return inventory_df
 
-    # ---------------------------------------------------------
+    # =========================================================
     # TASK 3: IMAGE INSPECTION
-    # ---------------------------------------------------------
+    # =========================================================
 
     def inspect_images(self):
+
         logger.info("Starting image inspection.")
 
-        image_records = []
+        overall_start = perf_counter()
 
-        image_extensions = {
-            ".png",
-            ".jpg",
-            ".jpeg",
-            ".bmp",
-            ".tif",
-            ".tiff",
-        }
+        image_records = []
 
         dataset_splits = {
             "train": self.config.train_dir,
@@ -159,57 +190,102 @@ class DataIngestion:
                 category_path = split_path / category
 
                 if not category_path.is_dir():
+
                     logger.warning(
                         f"Image category not found: {category_path}"
                     )
+
                     continue
 
-                # Recursively discover images in nested directories.
+                # Discover images recursively.
+                discovery_start = perf_counter()
+
                 image_files = sorted(
                     path
                     for path in category_path.rglob("*")
                     if path.is_file()
-                    and path.suffix.lower() in image_extensions
+                    and path.suffix.lower() in self.image_extensions
+                )
+
+                discovery_time = (
+                    perf_counter() - discovery_start
+                )
+
+                total_images = len(image_files)
+
+                logger.info(
+                    f"Inspecting {total_images} images in "
+                    f"{split_name}/{category}."
                 )
 
                 logger.info(
-                    f"Inspecting {len(image_files)} images "
-                    f"in {split_name}/{category}."
+                    f"Image discovery completed in "
+                    f"{discovery_time:.2f} seconds."
                 )
 
-                for image_path in image_files:
+                category_start = perf_counter()
+
+                valid_count = 0
+                invalid_count = 0
+
+                for index, image_path in enumerate(
+                    image_files,
+                    start=1
+                ):
 
                     record = {
+
                         "Split": split_name,
+
                         "Category": category,
+
                         "Image_Name": image_path.name,
+
                         "Image_Path": str(image_path),
+
                         "Extension": image_path.suffix.lower(),
+
                         "Width": None,
+
                         "Height": None,
+
                         "Channels": None,
+
                         "Color_Mode": None,
+
                         "Image_Format": None,
+
                         "Is_Valid": False,
+
                         "Error": None,
+
                     }
 
                     try:
-                        # First verify image integrity.
+
+                        # First open: verify image integrity.
                         with Image.open(image_path) as image:
+
                             image.verify()
 
-                        # Reopen to retrieve image properties.
+                        # Second open: retrieve image properties.
                         with Image.open(image_path) as image:
 
                             record["Width"] = image.width
+
                             record["Height"] = image.height
+
                             record["Channels"] = len(
                                 image.getbands()
                             )
+
                             record["Color_Mode"] = image.mode
+
                             record["Image_Format"] = image.format
+
                             record["Is_Valid"] = True
+
+                        valid_count += 1
 
                     except (
                         UnidentifiedImageError,
@@ -219,33 +295,70 @@ class DataIngestion:
 
                         record["Error"] = str(error)
 
+                        invalid_count += 1
+
                         logger.warning(
                             f"Invalid image: {image_path} | {error}"
                         )
 
                     image_records.append(record)
 
+                    # Progress logging every 500 images.
+                    if (
+                        index % 500 == 0
+                        or index == total_images
+                    ):
+
+                        elapsed = (
+                            perf_counter() - category_start
+                        )
+
+                        logger.info(
+                            f"Progress: {split_name}/{category}: "
+                            f"{index}/{total_images} images | "
+                            f"Valid: {valid_count} | "
+                            f"Invalid: {invalid_count} | "
+                            f"Elapsed: {elapsed:.2f} seconds"
+                        )
+
+                category_elapsed = (
+                    perf_counter() - category_start
+                )
+
+                logger.info(
+                    f"Completed {split_name}/{category} | "
+                    f"Total: {total_images} | "
+                    f"Valid: {valid_count} | "
+                    f"Invalid: {invalid_count} | "
+                    f"Time: {category_elapsed:.2f} seconds"
+                )
+
         image_df = pd.DataFrame(image_records)
 
-        valid_count = (
+        total_valid = (
             int(image_df["Is_Valid"].sum())
             if not image_df.empty else 0
         )
 
-        invalid_count = len(image_df) - valid_count
+        total_invalid = len(image_df) - total_valid
+
+        overall_elapsed = (
+            perf_counter() - overall_start
+        )
 
         logger.info(
             f"Image inspection completed. "
             f"Total: {len(image_df)}, "
-            f"Valid: {valid_count}, "
-            f"Invalid: {invalid_count}"
+            f"Valid: {total_valid}, "
+            f"Invalid: {total_invalid}, "
+            f"Time: {overall_elapsed:.2f} seconds."
         )
 
         return image_df
 
-    # ---------------------------------------------------------
+    # =========================================================
     # TASK 4: XML PARSING
-    # ---------------------------------------------------------
+    # =========================================================
 
     @staticmethod
     def parse_xml_file(xml_path):
@@ -259,9 +372,11 @@ class DataIngestion:
         raw_content = Path(xml_path).read_bytes()
 
         try:
+
             return ET.fromstring(raw_content)
 
         except ET.ParseError:
+
             pass
 
         encodings = [
@@ -274,12 +389,15 @@ class DataIngestion:
         for encoding in encodings:
 
             try:
-                decoded_content = raw_content.decode(encoding)
 
-                # Normalize the XML declaration when retrying.
+                decoded_content = raw_content.decode(
+                    encoding
+                )
+
+                # Normalize XML declaration during fallback.
                 decoded_content = re.sub(
-                    r"""(<\?xml[^?]*encoding\s*=\s*["'])[^"']+(["'][^?]*\?>)""",
-                    r"\g<1>UTF-8\2",
+                    r'(<\?xml[^?]*encoding\s*=\s*["\'])[^"\']+(["\'][^?]*\?>)',
+                    r'\g<1>UTF-8\2',
                     decoded_content,
                     count=1,
                     flags=re.IGNORECASE,
@@ -294,18 +412,22 @@ class DataIngestion:
                 ET.ParseError,
                 ValueError,
             ):
+
                 continue
 
         raise ValueError(
             f"Unable to parse XML file: {xml_path}"
         )
 
-    # ---------------------------------------------------------
+    # =========================================================
     # TASK 5: XML ANNOTATION INSPECTION
-    # ---------------------------------------------------------
+    # =========================================================
 
     def inspect_xml_annotations(self):
+
         logger.info("Starting XML annotation inspection.")
+
+        start_time = perf_counter()
 
         xml_records = []
 
@@ -316,6 +438,7 @@ class DataIngestion:
 
         def get_local_tag(tag):
             """Remove XML namespace from element names."""
+
             return tag.split("}")[-1]
 
         for split_name, split_path in dataset_splits.items():
@@ -323,50 +446,82 @@ class DataIngestion:
             xml_dir = split_path / self.config.annotation_dir
 
             if not xml_dir.is_dir():
+
                 logger.warning(
                     f"XML directory not found: {xml_dir}"
                 )
+
                 continue
 
             xml_files = sorted(xml_dir.rglob("*.xml"))
 
-            for xml_path in xml_files:
+            total_xml = len(xml_files)
+
+            logger.info(
+                f"Inspecting {total_xml} XML files "
+                f"in {split_name}."
+            )
+
+            split_start = perf_counter()
+
+            for index, xml_path in enumerate(
+                xml_files,
+                start=1
+            ):
 
                 record = {
+
                     "Split": split_name,
+
                     "XML_File": xml_path.name,
+
                     "Root_Tag": None,
+
                     "Writer_ID": None,
+
                     "Writer_ID_Source": "Filename inference",
+
                     "Image_Reference": None,
+
                     "Image_Width": None,
+
                     "Image_Height": None,
+
                     "Text_Line_Count": 0,
+
                     "Region_Count": 0,
+
                     "Point_Count": 0,
+
                     "Transcription_Available": False,
+
                     "Is_Valid": False,
+
                     "Error": None,
+
                 }
 
                 try:
+
                     root = self.parse_xml_file(xml_path)
 
-                    record["Root_Tag"] = get_local_tag(root.tag)
+                    record["Root_Tag"] = get_local_tag(
+                        root.tag
+                    )
 
-                    # Extract writer ID from CVL filename.
                     # Example: 0001-1_attributes.xml -> 0001
                     filename_match = re.match(
                         r"^(\d+)-",
-                        xml_path.stem,
+                        xml_path.stem
                     )
 
                     if filename_match:
+
                         record["Writer_ID"] = (
                             filename_match.group(1)
                         )
 
-                    # Extract page-level metadata and annotation counts.
+                    # Extract page metadata and annotations.
                     for element in root.iter():
 
                         tag = get_local_tag(element.tag)
@@ -399,8 +554,14 @@ class DataIngestion:
 
                         elif tag == "Unicode":
 
-                            if element.text and element.text.strip():
-                                record["Transcription_Available"] = True
+                            if (
+                                element.text
+                                and element.text.strip()
+                            ):
+
+                                record[
+                                    "Transcription_Available"
+                                ] = True
 
                     record["Is_Valid"] = True
 
@@ -419,6 +580,21 @@ class DataIngestion:
 
                 xml_records.append(record)
 
+                if (
+                    index % 100 == 0
+                    or index == total_xml
+                ):
+
+                    elapsed = (
+                        perf_counter() - split_start
+                    )
+
+                    logger.info(
+                        f"XML progress: {split_name}: "
+                        f"{index}/{total_xml} files | "
+                        f"Elapsed: {elapsed:.2f} seconds"
+                    )
+
         xml_df = pd.DataFrame(xml_records)
 
         valid_count = (
@@ -428,18 +604,21 @@ class DataIngestion:
 
         invalid_count = len(xml_df) - valid_count
 
+        elapsed_time = perf_counter() - start_time
+
         logger.info(
             f"XML inspection completed. "
             f"Total: {len(xml_df)}, "
             f"Valid: {valid_count}, "
-            f"Invalid: {invalid_count}"
+            f"Invalid: {invalid_count}, "
+            f"Time: {elapsed_time:.2f} seconds."
         )
 
         return xml_df
 
-    # ---------------------------------------------------------
+    # =========================================================
     # TASK 6: SAVE INGESTION REPORTS
-    # ---------------------------------------------------------
+    # =========================================================
 
     def save_ingestion_reports(
         self,
@@ -450,7 +629,7 @@ class DataIngestion:
 
         self.report_dir.mkdir(
             parents=True,
-            exist_ok=True,
+            exist_ok=True
         )
 
         inventory_csv = (
@@ -468,17 +647,17 @@ class DataIngestion:
         # Save CSV reports.
         inventory_df.to_csv(
             inventory_csv,
-            index=False,
+            index=False
         )
 
         image_df.to_csv(
             image_csv,
-            index=False,
+            index=False
         )
 
         xml_df.to_csv(
             xml_csv,
-            index=False,
+            index=False
         )
 
         total_files = int(
@@ -487,7 +666,7 @@ class DataIngestion:
 
         total_size_mb = round(
             float(inventory_df["Total_Size_MB"].sum()),
-            2,
+            2
         )
 
         valid_images = (
@@ -519,47 +698,75 @@ class DataIngestion:
                 in image_category_summary.items()
             }
 
-        # Writer ID source is explicitly marked as inferred.
+        # Writer IDs are inferred from filenames.
         writer_count = (
             int(xml_df["Writer_ID"].nunique())
             if not xml_df.empty else 0
         )
 
         summary = {
+
             "dataset_name": self.config.dataset_name,
+
             "dataset_path": str(self.config.dataset_dir),
 
             "dataset_inventory": {
+
                 "total_files": total_files,
+
                 "total_size_mb": total_size_mb,
+
                 "categories": inventory_df.to_dict(
                     orient="records"
                 ),
+
             },
 
             "image_inspection": {
+
                 "total_images": len(image_df),
+
                 "valid_images": valid_images,
-                "invalid_images": len(image_df) - valid_images,
+
+                "invalid_images": (
+                    len(image_df) - valid_images
+                ),
+
                 "category_counts": image_category_summary,
+
             },
 
             "xml_inspection": {
+
                 "total_xml_files": len(xml_df),
+
                 "valid_xml_files": valid_xml,
-                "invalid_xml_files": len(xml_df) - valid_xml,
+
+                "invalid_xml_files": (
+                    len(xml_df) - valid_xml
+                ),
+
                 "unique_inferred_writer_ids": writer_count,
+
                 "transcription_available": (
-                    bool(xml_df["Transcription_Available"].any())
+                    bool(
+                        xml_df["Transcription_Available"].any()
+                    )
                     if not xml_df.empty else False
                 ),
+
             },
 
             "reports": {
+
                 "inventory_csv": inventory_csv.name,
+
                 "image_inspection_csv": image_csv.name,
+
                 "xml_inspection_csv": xml_csv.name,
+
             },
+
         }
 
         summary_json = (
@@ -569,14 +776,14 @@ class DataIngestion:
         with open(
             summary_json,
             "w",
-            encoding="utf-8",
+            encoding="utf-8"
         ) as json_file:
 
             json.dump(
                 summary,
                 json_file,
                 indent=4,
-                ensure_ascii=False,
+                ensure_ascii=False
             )
 
         logger.info(
@@ -586,17 +793,22 @@ class DataIngestion:
         print("\nINGESTION REPORTS SAVED")
 
         print(f"Inventory: {inventory_csv}")
+
         print(f"Image inspection: {image_csv}")
+
         print(f"XML inspection: {xml_csv}")
+
         print(f"Summary: {summary_json}")
 
         return summary
 
-    # ---------------------------------------------------------
+    # =========================================================
     # TASK 7: EXECUTE COMPLETE DATA INGESTION
-    # ---------------------------------------------------------
+    # =========================================================
 
     def initiate_data_ingestion(self):
+
+        pipeline_start = perf_counter()
 
         print("\nSTARTING WRITERLENS DATA INGESTION")
 
@@ -627,11 +839,27 @@ class DataIngestion:
             xml_df=xml_df,
         )
 
+        total_elapsed = perf_counter() - pipeline_start
+
+        logger.info(
+            f"Complete Data Ingestion Pipeline finished "
+            f"in {total_elapsed:.2f} seconds."
+        )
+
         print("\nDATA INGESTION COMPLETED")
 
+        print(
+            f"Total execution time: {total_elapsed:.2f} seconds"
+        )
+
         return {
+
             "inventory": inventory_df,
+
             "image_inspection": image_df,
+
             "xml_inspection": xml_df,
+
             "summary": summary,
+
         }
